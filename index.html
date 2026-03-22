@@ -1,176 +1,265 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Mobile-First Map UI</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mobile-First Map UI</title>
 
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- MapLibre GL JS -->
-  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
-  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <!-- MapLibre GL JS -->
+    <link
+      href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css"
+      rel="stylesheet"
+    />
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
-  <!-- React -->
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- React -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <style>
-    html, body, #root {
-      margin: 0;
-      height: 100%;
-    }
-    .maplibregl-canvas { z-index: 0 !important; }
-    .pt-safe { padding-top: env(safe-area-inset-top); }
-  </style>
-</head>
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        height: 100%;
+      }
 
-<body class="bg-gray-100 pt-safe">
-<div id="root"></div>
+      .maplibregl-canvas {
+        z-index: 0 !important;
+        transition: opacity 0.25s ease-in-out;
+      }
 
-<script type="text/babel">
-const { useState, useRef, useEffect } = React;
+      .pt-safe {
+        padding-top: env(safe-area-inset-top);
+      }
+    </style>
+  </head>
 
-function App() {
-  const [active, setActive] = useState(false);
-  const inputRef = useRef(null);
+  <body class="bg-gray-100 pt-safe">
+    <div id="root"></div>
 
-  useEffect(() => {
-    if (active) setTimeout(() => inputRef.current?.focus(), 200);
-  }, [active]);
+    <script type="text/babel">
+      const { useState, useRef, useEffect } = React;
 
-  useEffect(() => {
-    const map = new maplibregl.Map({
-      container: "map",
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: "raster",
-            tiles: [
-              "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-              "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-              "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            ],
-            tileSize: 256
+      function App() {
+        const [activeSearch, setActiveSearch] = useState(false);
+        const inputRef = useRef(null);
+        const mapRef = useRef(null);
+
+        useEffect(() => {
+          if (activeSearch) setTimeout(() => inputRef.current?.focus(), 200);
+        }, [activeSearch]);
+
+        useEffect(() => {
+          const map = new maplibregl.Map({
+            container: "map",
+            style: {
+              version: 8,
+              sources: {
+                osm: {
+                  type: "raster",
+                  tiles: [
+                    "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                  ],
+                  tileSize: 512,
+                  maxzoom: 20,
+                },
+              },
+              layers: [
+                {
+                  id: "background",
+                  type: "background",
+                  paint: { "background-color": "#e0e0e0" },
+                },
+                { id: "osm", type: "raster", source: "osm" },
+              ],
+            },
+            center: [78.4867, 17.385],
+            zoom: 16,
+            pitch: 60,
+            bearing: -20,
+            maxPitch: 85,
+            renderWorldCopies: true,
+          });
+
+          mapRef.current = map;
+
+          // Enable native gestures
+          map.dragRotate.enable();
+          map.touchZoomRotate.enable();
+          map.touchZoomRotate.enableRotation();
+
+          return () => map.remove();
+        }, []);
+
+        // Fly-to search
+        const handleSearch = (e) => {
+          if (e.key === "Enter" && mapRef.current) {
+            const query = e.target.value;
+            if (!query) return;
+            fetch(
+              `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+                query,
+              )}&format=json&limit=1`,
+            )
+              .then((res) => res.json())
+              .then((data) => {
+                if (data.length > 0) {
+                  const { lat, lon } = data[0];
+                  mapRef.current.flyTo({
+                    center: [parseFloat(lon), parseFloat(lat)],
+                    zoom: 16,
+                  });
+                } else {
+                  alert("Location not found");
+                }
+              });
           }
-        },
-        layers: [
-          { id: "osm", type: "raster", source: "osm" }
-        ]
-      },
-      center: [78.4867, 17.3850],
-      zoom: 16,
-      pitch: 60,
-      bearing: -20,
-      maxPitch: 85
-    });
+        };
 
-    map.addControl(new maplibregl.NavigationControl(), "bottom-right");
-    map.dragRotate.enable();
-    map.touchZoomRotate.enable();
-    map.touchZoomRotate.enableRotation();
+        // Center map on user location
+        const centerOnUser = () => {
+          if (!mapRef.current) return;
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                mapRef.current.flyTo({
+                  center: [pos.coords.longitude, pos.coords.latitude],
+                  zoom: 16,
+                });
+              },
+              () => alert("Unable to get your location"),
+            );
+          } else {
+            alert("Geolocation not supported");
+          }
+        };
 
-    return () => map.remove();
-  }, []);
+        return (
+          <div className="flex flex-col h-screen overflow-hidden">
+            {/* Header */}
+            <header className="bg-white/70 backdrop-blur-md shadow p-4 flex justify-between z-20">
+              <span className="text-xl">☰</span>
+              <h1 className="font-semibold">My App</h1>
+              <div></div>
+            </header>
 
-  return (
-    <div className="flex flex-col h-screen overflow-hidden">
+            {/* Main Section */}
+            <main className="flex-1 relative">
+              {/* Map */}
+              <div id="map" className="w-full h-full"></div>
 
-      {/* Header */}
-      <header className="bg-white/70 backdrop-blur-md shadow p-4 flex justify-between z-20">
-        <span className="text-xl">☰</span>
-        <h1 className="font-semibold">My App</h1>
-        <div></div>
-      </header>
+              {/* Search Bar */}
+              <div className="absolute top-5 left-0 right-0 px-4 z-[1000]">
+                <div
+                  onClick={() => setActiveSearch(true)}
+                  className={`flex items-center h-12 rounded-xl
+                    bg-white/40 backdrop-blur-xl border border-white/50 shadow-lg
+                    transition-all duration-300
+                    ${activeSearch ? "px-3" : "px-3 justify-end"}
+                  `}
+                >
+                  <span className={`text-xl ${activeSearch ? "mr-2" : ""}`}>
+                    🔍
+                  </span>
 
-      {/* Main Section */}
-      <main className="flex-1 relative">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    placeholder="Search places..."
+                    onKeyDown={handleSearch}
+                    className={`bg-transparent outline-none flex-1 text-sm
+                      ${activeSearch ? "opacity-100 ml-1" : "opacity-0 w-0"}
+                    `}
+                  />
 
-        {/* Map */}
-        <div id="map" className="w-full h-full"></div>
+                  {activeSearch && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveSearch(false);
+                      }}
+                      className="text-lg cursor-pointer ml-2"
+                    >
+                      ✖
+                    </span>
+                  )}
+                </div>
+              </div>
 
-        {/* Search Bar */}
-        <div className="absolute top-5 left-0 right-0 px-4 z-[1000]">
-          <div className={`flex items-center h-12 rounded-xl
-              bg-white/40 backdrop-blur-xl border border-white/50 shadow-lg
-              transition-all duration-300
-              ${active ? "px-3" : "px-3 justify-end"}
-            `}
-          >
-            <span
-              onClick={() => setActive(true)}
-              className={`text-xl cursor-pointer ${active ? "mr-2" : ""}`}
-            >
-              🔍
-            </span>
+              {/* Custom Controls (zoom, compass, 📍) */}
+              <div className="absolute bottom-24 right-4 flex flex-col space-y-2 z-20">
+                <button
+                  onClick={() => mapRef.current.zoomIn()}
+                  className="bg-white/70 backdrop-blur-md p-2 rounded shadow"
+                  title="Zoom In"
+                >
+                  ➕
+                </button>
+                <button
+                  onClick={() => mapRef.current.zoomOut()}
+                  className="bg-white/70 backdrop-blur-md p-2 rounded shadow"
+                  title="Zoom Out"
+                >
+                  ➖
+                </button>
+                <button
+                  onClick={() => mapRef.current.resetNorth()}
+                  className="bg-white/70 backdrop-blur-md p-2 rounded shadow"
+                  title="Reset North"
+                >
+                  🧭
+                </button>
+                <button
+                  onClick={centerOnUser}
+                  className="bg-white/70 backdrop-blur-md p-2 rounded shadow"
+                  title="Center on Me"
+                >
+                  📍
+                </button>
+              </div>
+            </main>
 
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder="Search places..."
-              className={`bg-transparent outline-none flex-1 text-sm
-                ${active ? "opacity-100 ml-1" : "opacity-0 w-0"}
-              `}
-            />
+            {/* Bottom Navigation */}
+            <nav className="bg-white/70 backdrop-blur-md border-t z-20">
+              <div className="flex justify-around py-2 text-xs">
+                <div className="flex flex-col items-center">
+                  <span className="text-lg">🏠</span>
+                  <span>Home</span>
+                </div>
 
-            {active && (
-              <span
-                onClick={() => setActive(false)}
-                className="text-lg cursor-pointer ml-2"
-              >
-                ✖
-              </span>
-            )}
+                <div className="flex flex-col items-center">
+                  <span className="text-lg">🧭</span>
+                  <span>Explore</span>
+                </div>
+
+                <div className="flex flex-col items-center">
+                  <span className="text-lg">⚡</span>
+                  <span>Active</span>
+                </div>
+
+                <div className="flex flex-col items-center">
+                  <span className="text-lg">🕘</span>
+                  <span>History</span>
+                </div>
+
+                <div className="flex flex-col items-center">
+                  <span className="text-lg">👤</span>
+                  <span>Profile</span>
+                </div>
+              </div>
+            </nav>
           </div>
-        </div>
+        );
+      }
 
-        {/* Floating Action Button */}
-        <div className="absolute bottom-24 right-4 bg-white/70 backdrop-blur-md p-3 rounded-full shadow-lg z-20">
-          📍
-        </div>
-
-      </main>
-
-      {/* Bottom Navigation */}
-      <nav className="bg-white/70 backdrop-blur-md border-t z-20">
-        <div className="flex justify-around py-2 text-xs">
-
-          <div className="flex flex-col items-center">
-            <span className="text-lg">🏠</span>
-            <span>Home</span>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <span className="text-lg">🧭</span>
-            <span>Explore</span>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <span className="text-lg">⚡</span>
-            <span>Active</span>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <span className="text-lg">🕘</span>
-            <span>History</span>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <span className="text-lg">👤</span>
-            <span>Profile</span>
-          </div>
-
-        </div>
-      </nav>
-
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-</script>
-</body>
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
 </html>
