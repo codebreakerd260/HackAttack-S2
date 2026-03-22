@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mobile-First Map UI</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- MapLibre GL JS -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+
+  <!-- React -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    html, body, #root {
+      margin: 0;
+      height: 100%;
+    }
+    .maplibregl-canvas { z-index: 0 !important; }
+    .pt-safe { padding-top: env(safe-area-inset-top); }
+  </style>
+</head>
+
+<body class="bg-gray-100 pt-safe">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useEffect } = React;
+
+function App() {
+  const [active, setActive] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (active) setTimeout(() => inputRef.current?.focus(), 200);
+  }, [active]);
+
+  useEffect(() => {
+    const map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: "raster",
+            tiles: [
+              "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+              "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+              "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            ],
+            tileSize: 256
+          }
+        },
+        layers: [
+          { id: "osm", type: "raster", source: "osm" }
+        ]
+      },
+      center: [78.4867, 17.3850],
+      zoom: 16,
+      pitch: 60,
+      bearing: -20,
+      maxPitch: 85
+    });
+
+    map.addControl(new maplibregl.NavigationControl(), "bottom-right");
+    map.dragRotate.enable();
+    map.touchZoomRotate.enable();
+    map.touchZoomRotate.enableRotation();
+
+    return () => map.remove();
+  }, []);
+
+  return (
+    <div className="flex flex-col h-screen overflow-hidden">
+
+      {/* Header */}
+      <header className="bg-white/70 backdrop-blur-md shadow p-4 flex justify-between z-20">
+        <span className="text-xl">☰</span>
+        <h1 className="font-semibold">My App</h1>
+        <div></div>
+      </header>
+
+      {/* Main Section */}
+      <main className="flex-1 relative">
+
+        {/* Map */}
+        <div id="map" className="w-full h-full"></div>
+
+        {/* Search Bar */}
+        <div className="absolute top-5 left-0 right-0 px-4 z-[1000]">
+          <div className={`flex items-center h-12 rounded-xl
+              bg-white/40 backdrop-blur-xl border border-white/50 shadow-lg
+              transition-all duration-300
+              ${active ? "px-3" : "px-3 justify-end"}
+            `}
+          >
+            <span
+              onClick={() => setActive(true)}
+              className={`text-xl cursor-pointer ${active ? "mr-2" : ""}`}
+            >
+              🔍
+            </span>
+
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Search places..."
+              className={`bg-transparent outline-none flex-1 text-sm
+                ${active ? "opacity-100 ml-1" : "opacity-0 w-0"}
+              `}
+            />
+
+            {active && (
+              <span
+                onClick={() => setActive(false)}
+                className="text-lg cursor-pointer ml-2"
+              >
+                ✖
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Floating Action Button */}
+        <div className="absolute bottom-24 right-4 bg-white/70 backdrop-blur-md p-3 rounded-full shadow-lg z-20">
+          📍
+        </div>
+
+      </main>
+
+      {/* Bottom Navigation */}
+      <nav className="bg-white/70 backdrop-blur-md border-t z-20">
+        <div className="flex justify-around py-2 text-xs">
+
+          <div className="flex flex-col items-center">
+            <span className="text-lg">🏠</span>
+            <span>Home</span>
+          </div>
+
+          <div className="flex flex-col items-center">
+            <span className="text-lg">🧭</span>
+            <span>Explore</span>
+          </div>
+
+          <div className="flex flex-col items-center">
+            <span className="text-lg">⚡</span>
+            <span>Active</span>
+          </div>
+
+          <div className="flex flex-col items-center">
+            <span className="text-lg">🕘</span>
+            <span>History</span>
+          </div>
+
+          <div className="flex flex-col items-center">
+            <span className="text-lg">👤</span>
+            <span>Profile</span>
+          </div>
+
+        </div>
+      </nav>
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
