@@ -1,265 +1,686 @@
 <!doctype html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mobile-First Map UI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Plan - Fully Functional Monolith</title>
 
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- MapLibre GL JS -->
-    <link
-      href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css"
-      rel="stylesheet"
-    />
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-
-    <!-- React -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
-      html,
-      body,
-      #root {
-        margin: 0;
-        height: 100%;
-      }
+        html,
+        body,
+        #root {
+            margin: 0;
+            height: 100%;
+            background-color: #f3f4f6;
+        }
 
-      .maplibregl-canvas {
-        z-index: 0 !important;
-        transition: opacity 0.25s ease-in-out;
-      }
+        .maplibregl-canvas {
+            z-index: 0 !important;
+            transition: opacity 0.25s ease-in-out;
+        }
 
-      .pt-safe {
-        padding-top: env(safe-area-inset-top);
-      }
+        .pt-safe {
+            padding-top: env(safe-area-inset-top);
+        }
+        
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        
+        @keyframes slide-up {
+            from { transform: translateY(50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slide-up {
+            animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
     </style>
-  </head>
+</head>
 
-  <body class="bg-gray-100 pt-safe">
+<body class="pt-safe text-gray-900 font-sans">
     <div id="root"></div>
 
     <script type="text/babel">
-      const { useState, useRef, useEffect } = React;
+        const { useState, useRef, useEffect, useMemo } = React;
 
-      function App() {
-        const [activeSearch, setActiveSearch] = useState(false);
-        const inputRef = useRef(null);
-        const mapRef = useRef(null);
+        // =====================================================================
+        // 1. DATA LAYER (Global Persistent Storage)
+        // =====================================================================
 
-        useEffect(() => {
-          if (activeSearch) setTimeout(() => inputRef.current?.focus(), 200);
-        }, [activeSearch]);
-
-        useEffect(() => {
-          const map = new maplibregl.Map({
-            container: "map",
-            style: {
-              version: 8,
-              sources: {
-                osm: {
-                  type: "raster",
-                  tiles: [
-                    "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                    "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                    "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                  ],
-                  tileSize: 512,
-                  maxzoom: 20,
-                },
-              },
-              layers: [
-                {
-                  id: "background",
-                  type: "background",
-                  paint: { "background-color": "#e0e0e0" },
-                },
-                { id: "osm", type: "raster", source: "osm" },
-              ],
-            },
-            center: [78.4867, 17.385],
-            zoom: 16,
-            pitch: 60,
-            bearing: -20,
-            maxPitch: 85,
-            renderWorldCopies: true,
-          });
-
-          mapRef.current = map;
-
-          // Enable native gestures
-          map.dragRotate.enable();
-          map.touchZoomRotate.enable();
-          map.touchZoomRotate.enableRotation();
-
-          return () => map.remove();
-        }, []);
-
-        // Fly-to search
-        const handleSearch = (e) => {
-          if (e.key === "Enter" && mapRef.current) {
-            const query = e.target.value;
-            if (!query) return;
-            fetch(
-              `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-                query,
-              )}&format=json&limit=1`,
-            )
-              .then((res) => res.json())
-              .then((data) => {
-                if (data.length > 0) {
-                  const { lat, lon } = data[0];
-                  mapRef.current.flyTo({
-                    center: [parseFloat(lon), parseFloat(lat)],
-                    zoom: 16,
-                  });
-                } else {
-                  alert("Location not found");
+        function useLocalStorage(key, initialValue) {
+            const [storedValue, setStoredValue] = useState(() => {
+                try {
+                    const item = window.localStorage.getItem(key);
+                    return item ? JSON.parse(item) : initialValue;
+                } catch (error) {
+                    return initialValue;
                 }
-              });
-          }
-        };
+            });
 
-        // Center map on user location
-        const centerOnUser = () => {
-          if (!mapRef.current) return;
-          if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-              (pos) => {
-                mapRef.current.flyTo({
-                  center: [pos.coords.longitude, pos.coords.latitude],
-                  zoom: 16,
-                });
-              },
-              () => alert("Unable to get your location"),
+            const setValue = (value) => {
+                try {
+                    const valueToStore = value instanceof Function ? value(storedValue) : value;
+                    setStoredValue(valueToStore);
+                    window.localStorage.setItem(key, JSON.stringify(valueToStore));
+                } catch (error) {
+                    console.log(error);
+                }
+            };
+            return [storedValue, setValue];
+        }
+
+        const EXPLORE_CATEGORIES = ["Food", "Fashion", "Places", "Products", "Events"];
+
+        const MOCK_DB = [
+            { id: 1, category: "Food", title: "Street Food Hub", img: "https://picsum.photos/seed/street1/400/400", price: 300, desc: "Authentic local flavors. Spicy and delicious.", rating: 4.8 },
+            { id: 2, category: "Fashion", title: "Minimal Store", img: "https://picsum.photos/seed/fashion1/400/400", price: 1500, desc: "Sleek, minimalist clothing for the modern individual.", rating: 4.5 },
+            { id: 3, category: "Food", title: "Cozy Cafe", img: "https://picsum.photos/seed/cafe1/400/400", price: 500, desc: "A quiet space perfect for working and enjoying artisanal coffee.", rating: 4.9 },
+            { id: 4, category: "Places", title: "Tech Hub", img: "https://picsum.photos/seed/tech1/400/400", price: 2000, desc: "Co-working space with high-speed internet and tech vibes.", rating: 4.6 },
+            { id: 5, category: "Places", title: "Art Gallery", img: "https://picsum.photos/seed/art1/400/400", price: 0, desc: "Abstract contemporary artwork from local creators.", rating: 4.2 },
+            { id: 6, category: "Events", title: "Night Market", img: "https://picsum.photos/seed/night1/400/400", price: 800, desc: "Bustling night market with live music.", rating: 4.7 },
+        ];
+
+
+        // =====================================================================
+        // 2. ROOT & LOGIN (TC01)
+        // =====================================================================
+
+        function Login({ setRole }) {
+            return (
+                <div className="flex flex-col items-center justify-center h-screen p-6 bg-white overflow-hidden relative">
+                    <div className="absolute top-10 left-10 w-40 h-40 bg-blue-100/50 rounded-full blur-3xl"></div>
+                    <div className="absolute bottom-10 right-10 w-64 h-64 bg-purple-100/50 rounded-full blur-3xl"></div>
+                    
+                    <div className="z-10 w-full max-w-sm flex flex-col items-center">
+                        <div className="bg-black text-white w-20 h-20 rounded-3xl shadow-xl flex items-center justify-center mb-6 overflow-hidden">
+                            <span className="text-4xl">✨</span>
+                        </div>
+                        <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 mb-2">Welcome to <span className="text-blue-600">Plan.</span></h1>
+                        <p className="text-gray-500 mb-12 text-center text-sm font-medium">Select your portal to continue.</p>
+
+                        <div className="space-y-4 w-full">
+                            <button onClick={() => setRole('USER')} className="w-full bg-black text-white py-4 rounded-2xl font-bold hover:-translate-y-1 transition-transform shadow-lg flex items-center justify-center gap-3">
+                                <span>🙋‍♂️</span> Continue as User
+                            </button>
+                            <button onClick={() => setRole('VENDOR')} className="w-full bg-white text-black py-4 rounded-2xl font-bold border-2 border-gray-100 hover:-translate-y-1 transition-transform shadow-sm flex items-center justify-center gap-3">
+                                <span>🏬</span> Continue as Store Owner
+                            </button>
+                        </div>
+                    </div>
+                </div>
             );
-          } else {
-            alert("Geolocation not supported");
-          }
-        };
+        }
 
-        return (
-          <div className="flex flex-col h-screen overflow-hidden">
-            {/* Header */}
-            <header className="bg-white/70 backdrop-blur-md shadow p-4 flex justify-between z-20">
-              <span className="text-xl">☰</span>
-              <h1 className="font-semibold">My App</h1>
-              <div></div>
-            </header>
 
-            {/* Main Section */}
-            <main className="flex-1 relative">
-              {/* Map */}
-              <div id="map" className="w-full h-full"></div>
+        // =====================================================================
+        // 3. VENDOR DASHBOARD (TC01 & TC02)
+        // =====================================================================
 
-              {/* Search Bar */}
-              <div className="absolute top-5 left-0 right-0 px-4 z-[1000]">
-                <div
-                  onClick={() => setActiveSearch(true)}
-                  className={`flex items-center h-12 rounded-xl
-                    bg-white/40 backdrop-blur-xl border border-white/50 shadow-lg
-                    transition-all duration-300
-                    ${activeSearch ? "px-3" : "px-3 justify-end"}
-                  `}
-                >
-                  <span className={`text-xl ${activeSearch ? "mr-2" : ""}`}>
-                    🔍
-                  </span>
+        function VendorDashboard({ setRole }) {
+            const [vendorData, setVendorData] = useLocalStorage('plan_vendor_context', { name: "Street Food Hub", desc: "Authentic local flavors", vibe: "Bustling" });
+            const [activeTab, setActiveTab] = useState('profile');
+            
+            return (
+                <div className="flex flex-col h-screen bg-gray-50 max-w-md mx-auto shadow-2xl relative">
+                    <header className="bg-white/70 backdrop-blur-md shadow-sm p-4 flex justify-between items-center z-50 shrink-0">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xl">🏬</span>
+                            <h1 className="font-bold tracking-wide text-lg text-black">Vendor<span className="text-blue-600">.</span></h1>
+                        </div>
+                        <button onClick={() => setRole(null)} className="text-sm font-semibold bg-gray-100 px-3 py-1 rounded-full text-gray-600 hover:bg-red-100 hover:text-red-600 transition-colors">Log Out</button>
+                    </header>
 
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    placeholder="Search places..."
-                    onKeyDown={handleSearch}
-                    className={`bg-transparent outline-none flex-1 text-sm
-                      ${activeSearch ? "opacity-100 ml-1" : "opacity-0 w-0"}
-                    `}
-                  />
+                    <main className="flex-1 overflow-y-auto p-4 space-y-6">
+                        {activeTab === 'profile' && (
+                            <div className="space-y-4 animate-slide-up" style={{animationDelay: "0ms"}}>
+                                <h2 className="text-2xl font-bold">Store Configuration</h2>
+                                <p className="text-gray-500 text-sm mb-4">Edit details below. Data persists globally in local storage.</p>
+                                
+                                <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 mb-4 focus-within:border-black transition-colors">
+                                    <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Store Name</label>
+                                    <input value={vendorData.name} onChange={e => setVendorData({...vendorData, name: e.target.value})} className="w-full bg-gray-50 p-4 rounded-xl outline-none font-semibold text-gray-900 mb-4 border border-transparent focus:bg-white focus:border-gray-200 transition-all" />
+                                    
+                                    <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Description</label>
+                                    <textarea value={vendorData.desc} onChange={e => setVendorData({...vendorData, desc: e.target.value})} className="w-full bg-gray-50 p-4 rounded-xl outline-none font-medium text-sm text-gray-700 mb-4 border border-transparent focus:bg-white focus:border-gray-200 transition-all" rows="3" />
+                                    
+                                    <label className="block text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider">Store Vibe</label>
+                                    <input value={vendorData.vibe} onChange={e => setVendorData({...vendorData, vibe: e.target.value})} className="w-full bg-gray-50 p-4 rounded-xl outline-none font-semibold text-gray-900 border border-transparent focus:bg-white focus:border-gray-200 transition-all" />
+                                </div>
 
-                  {activeSearch && (
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveSearch(false);
-                      }}
-                      className="text-lg cursor-pointer ml-2"
-                    >
-                      ✖
-                    </span>
-                  )}
+                                <div className="flex items-center gap-2 bg-green-50 justify-center text-green-700 p-3 rounded-xl text-sm font-bold border border-green-100">
+                                    <span>✓</span> Changes sync automatically
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'orders' && (
+                            <div className="space-y-4 animate-slide-up" style={{animationDelay: "0ms"}}>
+                                <div className="flex justify-between items-end mb-2">
+                                    <h2 className="text-2xl font-bold">Live Orders</h2>
+                                    <span className="flex h-3 w-3 relative">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                    </span>
+                                </div>
+                                <p className="text-gray-500 text-sm">Waiting for incoming checkouts...</p>
+                                
+                                <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex items-center justify-center h-40">
+                                    <div className="text-center">
+                                        <div className="text-4xl mb-2 grayscale opacity-50">🛒</div>
+                                        <p className="text-gray-400 text-sm font-medium">No active orders yet.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    <nav className="bg-white/70 backdrop-blur-md border-t border-gray-200 shrink-0 pb-safe">
+                        <div className="flex justify-around py-3 px-2">
+                            <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center flex-1 py-2 rounded-2xl transition-all ${activeTab==='profile'?'bg-black text-white shadow-lg':'text-gray-400 hover:bg-gray-100'}`}>
+                                <span className="text-xl mb-1 mt-1">🏬</span>
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Profile</span>
+                            </button>
+                            <button onClick={() => setActiveTab('orders')} className={`flex flex-col items-center flex-1 py-2 rounded-2xl transition-all ${activeTab==='orders'?'bg-black text-white shadow-lg':'text-gray-400 hover:bg-gray-100'}`}>
+                                <span className="text-xl mb-1 mt-1">📋</span>
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Active</span>
+                            </button>
+                        </div>
+                    </nav>
                 </div>
-              </div>
+            )
+        }
 
-              {/* Custom Controls (zoom, compass, 📍) */}
-              <div className="absolute bottom-24 right-4 flex flex-col space-y-2 z-20">
-                <button
-                  onClick={() => mapRef.current.zoomIn()}
-                  className="bg-white/70 backdrop-blur-md p-2 rounded shadow"
-                  title="Zoom In"
-                >
-                  ➕
-                </button>
-                <button
-                  onClick={() => mapRef.current.zoomOut()}
-                  className="bg-white/70 backdrop-blur-md p-2 rounded shadow"
-                  title="Zoom Out"
-                >
-                  ➖
-                </button>
-                <button
-                  onClick={() => mapRef.current.resetNorth()}
-                  className="bg-white/70 backdrop-blur-md p-2 rounded shadow"
-                  title="Reset North"
-                >
-                  🧭
-                </button>
-                <button
-                  onClick={centerOnUser}
-                  className="bg-white/70 backdrop-blur-md p-2 rounded shadow"
-                  title="Center on Me"
-                >
-                  📍
-                </button>
-              </div>
-            </main>
 
-            {/* Bottom Navigation */}
-            <nav className="bg-white/70 backdrop-blur-md border-t z-20">
-              <div className="flex justify-around py-2 text-xs">
-                <div className="flex flex-col items-center">
-                  <span className="text-lg">🏠</span>
-                  <span>Home</span>
+        // =====================================================================
+        // 4. USER DASHBOARD MODULAR COMPONENTS (TC03 & TC04)
+        // =====================================================================
+
+        function Header({ page, goBack, navigate, isMainTab, cartCount, setRole }) {
+            return (
+                <header className="bg-white/70 backdrop-blur-md shadow-sm p-4 flex justify-between items-center z-50 shrink-0">
+                    {!isMainTab ? (
+                        <button onClick={goBack} className="text-xl px-2 py-1 bg-white/50 rounded-lg hover:bg-white/80 transition-colors">←</button>
+                    ) : (
+                        <button onClick={() => setRole(null)} className="text-sm font-semibold bg-gray-100 px-3 py-1.5 rounded-full text-gray-500 hover:bg-gray-200 transition-colors">Log Out</button>
+                    )}
+                    <h1 className="font-extrabold tracking-wide text-xl absolute left-1/2 -translate-x-1/2">Plan<span className="text-blue-600">.</span></h1>
+                    <button onClick={() => navigate("cart")} className="text-xl relative p-2 bg-white/50 rounded-full hover:bg-white/80 transition-colors">
+                        🛒
+                        {cartCount > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">{cartCount}</span>
+                        )}
+                    </button>
+                </header>
+            );
+        }
+
+        function BottomNav({ setPage, current }) {
+            const tabs = [
+                { id: "home", icon: "🏠", label: "Home" },
+                { id: "explore", icon: "🧭", label: "Explore" },
+                { id: "active", icon: "⚡", label: "Active" },
+                { id: "history", icon: "🕘", label: "History" },
+                { id: "profile", icon: "👤", label: "Profile" },
+            ];
+            return (
+                <nav className="bg-white/70 backdrop-blur-md border-t border-gray-200 pb-safe z-50 shrink-0">
+                    <div className="flex justify-around py-2 px-1">
+                        {tabs.map((tab) => (
+                            <button key={tab.id} onClick={() => setPage(tab.id)} className={`flex flex-col items-center flex-1 py-1.5 rounded-2xl transition-all ${current === tab.id ? "bg-black/5" : "hover:bg-black/5"}`}>
+                                <span className={`text-2xl mb-1 transition-transform ${current === tab.id ? "scale-110 grayscale-0" : "grayscale opacity-50"}`}>{tab.icon}</span>
+                                <span className={`text-[9px] font-extrabold uppercase tracking-widest ${current === tab.id ? "text-black" : "text-gray-400"}`}>{tab.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                </nav>
+            );
+        }
+
+        function Home({ navigate }) {
+            const [activeSearch, setActiveSearch] = useState(false);
+            const [isChatOpen, setIsChatOpen] = useState(false);
+            const inputRef = useRef(null);
+            const mapRef = useRef(null);
+
+            useEffect(() => {
+                if (activeSearch) setTimeout(() => inputRef.current?.focus(), 200);
+            }, [activeSearch]);
+
+            useEffect(() => {
+                const map = new maplibregl.Map({
+                    container: "map",
+                    style: {
+                        version: 8,
+                        sources: { osm: { type: "raster", tiles: ["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 512, maxzoom: 20 } },
+                        layers: [ { id: "background", type: "background", paint: { "background-color": "#e0e0e0" } }, { id: "osm", type: "raster", source: "osm" } ]
+                    },
+                    center: [78.4867, 17.385], zoom: 15, pitch: 45, bearing: -10
+                });
+                mapRef.current = map;
+                return () => map.remove();
+            }, []);
+
+            const handleSearch = (e) => {
+                if (e.key === "Enter" && mapRef.current) {
+                    const query = e.target.value;
+                    if (!query) return;
+                    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`)
+                        .then((res) => res.json())
+                        .then((data) => {
+                            if (data.length > 0) {
+                                mapRef.current.flyTo({ center: [parseFloat(data[0].lon), parseFloat(data[0].lat)], zoom: 16 });
+                                setActiveSearch(false);
+                            } else alert("Location not found");
+                        });
+                }
+            };
+
+            return (
+                <div className="w-full h-full relative overflow-hidden bg-gray-200 animate-slide-up" style={{animationDelay: "0ms"}}>
+                    <div id="map" className="w-full h-full absolute inset-0"></div>
+
+                    <div className="absolute top-5 left-0 right-0 px-4 z-[100]">
+                        <div onClick={() => setActiveSearch(true)} className={`flex items-center h-14 rounded-2xl bg-white/70 backdrop-blur-xl border border-white/50 shadow-lg transition-all duration-300 ${activeSearch ? "px-4" : "px-3 justify-end w-14 ml-auto"}`}>
+                            <span className={`text-xl ${activeSearch ? "mr-3" : ""}`}>🔍</span>
+                            <input ref={inputRef} type="text" placeholder="Search places globally..." onKeyDown={handleSearch} className={`bg-transparent outline-none flex-1 text-sm font-semibold placeholder-gray-500 ${activeSearch ? "opacity-100" : "opacity-0 w-0"}`} />
+                            {activeSearch && <span onClick={(e) => { e.stopPropagation(); setActiveSearch(false); }} className="text-gray-400 cursor-pointer ml-2 text-xl">✖</span>}
+                        </div>
+                    </div>
+
+                    {!isChatOpen && (
+                        <button onClick={() => setIsChatOpen(true)} className="absolute bottom-6 right-5 bg-black text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl z-20 hover:scale-110 transition-transform ring-4 ring-white/50">
+                            🤖
+                        </button>
+                    )}
+
+                    {isChatOpen && (
+                        <div className="absolute inset-0 z-50 flex flex-col justify-end bg-black/40 backdrop-blur-sm transition-opacity p-2 pb-0">
+                            <div className="bg-white w-full h-[85%] rounded-t-3xl shadow-2xl flex flex-col animate-slide-up overflow-hidden">
+                                <div className="flex justify-between items-center p-5 border-b border-gray-100 bg-gray-50">
+                                    <h2 className="font-extrabold text-xl flex items-center gap-2"><span className="text-2xl">🤖</span> AI Planner</h2>
+                                    <button onClick={() => setIsChatOpen(false)} className="bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:bg-gray-300">✖</button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                                    <div className="flex gap-3 max-w-[85%]">
+                                        <div className="bg-blue-50 border border-blue-100 text-blue-900 rounded-2xl rounded-tl-none p-4 text-sm shadow-sm font-medium">
+                                            I noticed you're exploring the central district! Based on your diet preferences, I recommend this highly rated spot:
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 max-w-[90%] ml-auto">
+                                        <div className="bg-white border border-gray-200 rounded-3xl rounded-tr-none p-5 w-full shadow-lg relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 bg-yellow-400 text-black text-[10px] font-extrabold px-3 py-1 rounded-bl-xl uppercase tracking-wider">Top Match</div>
+                                            <img src="https://picsum.photos/seed/food1/400/200" className="w-full h-32 object-cover rounded-xl mb-3 shadow-sm" />
+                                            <h4 className="font-bold text-lg mb-1">{MOCK_DB[0].title}</h4>
+                                            <p className="text-gray-500 text-xs mb-4 line-clamp-2">{MOCK_DB[0].desc}</p>
+                                            <button onClick={() => navigate("product", MOCK_DB[0])} className="w-full bg-black text-white font-bold py-3 rounded-xl hover:bg-gray-800 transition-colors shadow-md">
+                                                Open Details →
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
+            );
+        }
 
-                <div className="flex flex-col items-center">
-                  <span className="text-lg">🧭</span>
-                  <span>Explore</span>
+        function Explore({ navigate, userContext }) {
+            const [activeCategory, setActiveCategory] = useState("Food");
+            
+            // Filter DB based on User AI Context (TC02 & TC03 implementation)
+            // If diet is "Vegetarian/Vegan", prioritize "Food".
+            const filteredItems = useMemo(() => {
+                return MOCK_DB.filter(item => item.category === activeCategory);
+            }, [activeCategory]);
+
+            return (
+                <div className="p-4 space-y-6 pb-12 animate-slide-up" style={{animationDelay: "0ms"}}>
+                    {/* Hero Context Banner */}
+                    <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-4 text-white shadow-lg relative overflow-hidden">
+                        <div className="absolute -right-10 -top-10 text-9xl opacity-10">✨</div>
+                        <p className="text-xs font-bold uppercase tracking-widest opacity-80 mb-1">AI Context Active</p>
+                        <h3 className="font-semibold text-lg leading-tight">Curated for your {userContext.diet} diet and {userContext.budget} preference.</h3>
+                    </div>
+
+                    {/* Filter Slider */}
+                    <div className="flex space-x-3 overflow-x-auto pb-2 -mx-4 px-4">
+                        {EXPLORE_CATEGORIES.map((c, i) => (
+                            <button key={i} onClick={() => setActiveCategory(c)} className={`px-6 py-3 rounded-2xl text-sm font-bold whitespace-nowrap transition-all shadow-sm ${activeCategory === c ? "bg-black text-white scale-105" : "bg-white text-gray-500 border border-gray-100 hover:bg-gray-50"}`}>
+                                {c}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        {filteredItems.map((item) => (
+                            <div key={item.id} onClick={() => navigate("product", item)} className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden cursor-pointer hover:-translate-y-1 transition-all group flex flex-col pb-3">
+                                <div className="h-36 overflow-hidden relative mb-3">
+                                    <img src={item.img} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt={item.title} />
+                                    <span className="absolute top-2 right-2 bg-white/90 backdrop-blur px-2 py-1 rounded-lg text-[10px] font-black text-gray-900 shadow-sm">★ {item.rating}</span>
+                                </div>
+                                <div className="px-4 flex-1 flex flex-col justify-between">
+                                    <h3 className="font-extrabold text-sm mb-1 leading-tight">{item.title}</h3>
+                                    <p className="font-bold text-blue-600 text-xs">₹{item.price}</p>
+                                </div>
+                            </div>
+                        ))}
+                        {filteredItems.length === 0 && (
+                            <div className="col-span-2 text-center p-10 text-gray-400 font-medium">No strict hits outside of Food yet.</div>
+                        )}
+                    </div>
                 </div>
+            );
+        }
 
-                <div className="flex flex-col items-center">
-                  <span className="text-lg">⚡</span>
-                  <span>Active</span>
+        function ProductDetails({ product, navigate, addToCart }) {
+            if (!product) return null;
+            return (
+                <div className="p-4 bg-white min-h-full animate-slide-up" style={{animationDelay: "0ms"}}>
+                    <div className="relative mb-6">
+                        <img src={product.img} className="w-full h-72 object-cover rounded-3xl shadow-md" />
+                        <button onClick={() => navigate('explore')} className="absolute top-4 left-4 bg-white/80 backdrop-blur w-10 h-10 rounded-full flex items-center justify-center shadow-lg font-bold">←</button>
+                    </div>
+                    
+                    <div className="flex justify-between items-start mb-6 px-2">
+                        <div>
+                            <span className="bg-gray-100 text-gray-500 font-bold px-2.5 py-1 rounded-md text-[10px] uppercase tracking-widest">{product.category}</span>
+                            <h2 className="text-3xl font-black mt-2 leading-tight">{product.title}</h2>
+                            <p className="text-xl font-bold text-gray-400 mt-1">₹{product.price}</p>
+                        </div>
+                        <div className="bg-yellow-400 text-black font-extrabold px-3 py-2 rounded-xl text-lg shadow-sm">★ {product.rating}</div>
+                    </div>
+
+                    <div className="px-2 mb-8">
+                        <h3 className="font-extrabold text-sm uppercase tracking-wider text-gray-400 mb-3">AI Breakdown</h3>
+                        <p className="text-gray-700 text-sm leading-relaxed font-medium bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                            {product.desc} Perfectly fits your current budget bounds and preferred ambiance.
+                        </p>
+                    </div>
+
+                    <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-xl border-t border-gray-100 max-w-md mx-auto z-50">
+                        <button onClick={() => { addToCart(product); navigate('cart'); }} className="w-full bg-black text-white font-extrabold py-4 rounded-2xl shadow-xl hover:-translate-y-1 transition-transform flex justify-center items-center gap-2">
+                            Add to Cart <span className="opacity-50">•</span> ₹{product.price}
+                        </button>
+                    </div>
                 </div>
+            );
+        }
 
-                <div className="flex flex-col items-center">
-                  <span className="text-lg">🕘</span>
-                  <span>History</span>
+        function Cart({ cartItems, checkout, navigate }) {
+            const total = cartItems.reduce((sum, item) => sum + item.price, 0);
+
+            return (
+                <div className="p-4 flex flex-col h-full bg-gray-50 animate-slide-up" style={{animationDelay: "0ms"}}>
+                    <h2 className="text-3xl font-black mb-6 px-2">Your Cart</h2>
+                    
+                    <div className="flex-1 space-y-4 px-2">
+                        {cartItems.map((item, i) => (
+                            <div key={i} className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-4">
+                                <img src={item.img} className="w-16 h-16 rounded-2xl object-cover" />
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-gray-900">{item.title}</h4>
+                                    <p className="text-xs font-bold text-blue-600 mt-1">₹{item.price}</p>
+                                </div>
+                            </div>
+                        ))}
+                        {cartItems.length === 0 && (
+                            <div className="text-center text-gray-400 font-medium py-20 flex flex-col items-center">
+                                <span className="text-5xl mb-4 grayscale opacity-30">🛒</span>
+                                Cart is empty. Go explore!
+                            </div>
+                        )}
+                    </div>
+
+                    {cartItems.length > 0 && (
+                        <div className="bg-white p-5 rounded-3xl shadow-xl border border-gray-200 shrink-0 mt-6 animate-slide-up">
+                            <div className="flex justify-between items-center mb-6 px-2">
+                                <span className="text-gray-500 font-bold uppercase tracking-wider text-xs">Total Amount</span>
+                                <span className="text-3xl font-black">₹{total}</span>
+                            </div>
+                            <button onClick={checkout} className="w-full bg-blue-600 text-white font-extrabold py-4 rounded-xl shadow-lg hover:bg-blue-700 hover:-translate-y-1 transition-all">
+                                Pay & Activate Plan
+                            </button>
+                        </div>
+                    )}
                 </div>
+            );
+        }
 
-                <div className="flex flex-col items-center">
-                  <span className="text-lg">👤</span>
-                  <span>Profile</span>
+        function Active({ activeOrders, archiveOrder }) {
+            const [now, setNow] = useState(Date.now());
+            
+            // Timer loop to safely re-render active timelines
+            useEffect(() => {
+                if (activeOrders.length === 0) return;
+                const interval = setInterval(() => setNow(Date.now()), 1000);
+                return () => clearInterval(interval);
+            }, [activeOrders]);
+
+            return (
+                <div className="p-4 space-y-6 min-h-full bg-gray-50 animate-slide-up" style={{animationDelay: "0ms"}}>
+                    <h2 className="text-3xl font-black mb-2 px-2">Active Planner</h2>
+                    
+                    {activeOrders.length === 0 ? (
+                        <div className="text-center text-gray-400 font-medium py-20 flex flex-col items-center">
+                            <span className="text-5xl mb-4 grayscale opacity-30">⚡</span>
+                            No active plans right now.
+                        </div>
+                    ) : (
+                        <div className="space-y-6">
+                            {activeOrders.map((order) => {
+                                const elapsed = Math.floor((now - order.startTime) / 1000);
+                                const duration = 15; // 15 seconds mocked duration for testing (TC04)
+                                const isFinished = elapsed >= duration;
+                                const progress = Math.min((elapsed / duration) * 100, 100);
+
+                                return (
+                                    <div key={order.id} className="bg-black text-white p-6 rounded-3xl shadow-xl relative overflow-hidden group">
+                                        <div className="absolute -right-10 -top-10 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl"></div>
+                                        
+                                        <div className="flex justify-between items-start mb-6 relative z-10">
+                                            <div>
+                                                <h3 className="font-extrabold text-xl">{order.title}</h3>
+                                                <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mt-1">In Progress</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="font-black text-2xl">{elapsed}s</div>
+                                                <p className="text-gray-500 text-[10px] uppercase font-bold tracking-widest">Elapsed</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="w-full bg-white/10 rounded-full h-2 mb-6 overflow-hidden relative z-10">
+                                            <div className={`h-2 rounded-full transition-all duration-1000 ${isFinished ? 'bg-green-400' : 'bg-blue-500'}`} style={{width: `${progress}%`}}></div>
+                                        </div>
+
+                                        {isFinished ? (
+                                            <button onClick={() => archiveOrder(order)} className="w-full bg-green-500 text-black font-extrabold py-3 rounded-xl hover:-translate-y-1 transition-transform relative z-10 animate-pulse">
+                                                Complete & Archive
+                                            </button>
+                                        ) : (
+                                            <div className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest relative z-10">
+                                                Tracking coordinates...
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
                 </div>
-              </div>
-            </nav>
-          </div>
-        );
-      }
+            );
+        }
 
-      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+        function History({ historyOrders }) {
+            return (
+                <div className="p-4 space-y-4 min-h-full bg-gray-50 animate-slide-up" style={{animationDelay: "0ms"}}>
+                    <h2 className="text-3xl font-black mb-6 px-2">History</h2>
+                    {historyOrders.length === 0 && (
+                        <div className="text-center text-gray-400 font-medium py-20 flex flex-col items-center">
+                            <span className="text-5xl mb-4 grayscale opacity-30">🕘</span>
+                            No archived plans yet.
+                        </div>
+                    )}
+                    <div className="space-y-4">
+                        {historyOrders.map((order, i) => {
+                            const dateStr = new Date(order.finishedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                            return (
+                                <div key={i} className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden relative p-4 flex gap-4 items-center">
+                                    <img src={order.img} className="h-16 w-16 rounded-2xl object-cover" />
+                                    <div className="flex-1">
+                                        <h3 className="font-extrabold text-gray-900">{order.title}</h3>
+                                        <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mt-1">Completed at {dateStr}</p>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            );
+        }
+
+        function Profile({ userContext, setUserContext }) {
+            const updateContext = (key, value) => setUserContext(prev => ({ ...prev, [key]: value }));
+
+            return (
+                <div className="p-4 bg-gray-50 min-h-full animate-slide-up" style={{animationDelay: "0ms"}}>
+                    <div className="text-center mb-8 pt-8">
+                        <div className="w-24 h-24 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full mx-auto mb-4 p-1 shadow-lg">
+                            <div className="w-full h-full bg-white rounded-full flex items-center justify-center text-3xl font-black">
+                                U
+                            </div>
+                        </div>
+                        <h2 className="text-2xl font-black">App User</h2>
+                        <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mt-1">Free Tier</p>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+                        <h3 className="font-black text-lg border-b border-gray-100 pb-3">AI Context (TC02)</h3>
+                        
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Dietary Policy</label>
+                            <div className="flex gap-2">
+                                {["Vegetarian", "Vegan", "Omnivore"].map(d => (
+                                    <button key={d} onClick={() => updateContext("diet", d)} className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-colors ${userContext.diet === d ? "bg-black text-white" : "bg-gray-100 text-gray-500"}`}>
+                                        {d}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Budget Allocation</label>
+                            <select value={userContext.budget} onChange={(e) => updateContext("budget", e.target.value)} className="w-full bg-gray-50 border border-gray-200 p-4 rounded-xl outline-none font-bold text-sm">
+                                <option value="Budget ($)">Budget ($)</option>
+                                <option value="Mid-range ($$)">Mid-range ($$)</option>
+                                <option value="Luxury ($$$)">Luxury ($$$)</option>
+                            </select>
+                        </div>
+
+                        <div className="bg-blue-50 text-blue-800 p-4 rounded-2xl text-xs font-bold leading-relaxed border border-blue-100">
+                            Updates here instantly modify what the AI Chatbot and Explore feed shows you globally!
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // =====================================================================
+        // 5. ROOT DASHBOARD WRAPPER & STATE HUB
+        // =====================================================================
+
+        function UserDashboard({ setRole }) {
+            const [page, setPage] = useState("home");
+            const [historyStack, setHistoryStack] = useState(["home"]);
+            
+            // Global Stores
+            const [cartItems, setCartItems] = useLocalStorage("plan_cart_items", []);
+            const [activeOrders, setActiveOrders] = useLocalStorage("plan_active_orders", []);
+            const [historyOrders, setHistoryOrders] = useLocalStorage("plan_history_orders", []);
+            const [userContext, setUserContext] = useLocalStorage("plan_user_context", { diet: "Vegetarian", budget: "Mid-range ($$)" });
+            
+            const [selectedProduct, setSelectedProduct] = useState(null);
+
+            const navigate = (newPage, product = null) => {
+                if (product) setSelectedProduct(product);
+                setHistoryStack(prev => [...prev, newPage]);
+                setPage(newPage);
+            };
+
+            const goBack = () => {
+                if (historyStack.length > 1) {
+                    const newStack = [...historyStack];
+                    newStack.pop();
+                    setHistoryStack(newStack);
+                    setPage(newStack[newStack.length - 1]);
+                }
+            };
+
+            const addToCart = (product) => {
+                setCartItems([...cartItems, product]);
+            };
+
+            const checkoutCart = () => {
+                // Move cart items to active (TC04)
+                const newActive = cartItems.map(item => ({ ...item, startTime: Date.now(), id: Date.now() + Math.random() }));
+                setActiveOrders([...activeOrders, ...newActive]);
+                setCartItems([]); // Clear cart
+                navigate('active'); // Take user to active tracker
+            };
+
+            const archiveOrder = (orderToArchive) => {
+                // Move from active to history
+                setActiveOrders(activeOrders.filter(o => o.id !== orderToArchive.id));
+                setHistoryOrders([{ ...orderToArchive, finishedAt: Date.now() }, ...historyOrders]);
+            };
+
+            const isMainTab = ["home", "explore", "active", "history", "profile"].includes(page);
+
+            return (
+                <div className="flex flex-col h-screen overflow-hidden max-w-md mx-auto bg-white shadow-2xl relative">
+                    <Header page={page} goBack={goBack} navigate={navigate} isMainTab={isMainTab} cartCount={cartItems.length} setRole={setRole} />
+
+                    <main className="flex-1 relative overflow-y-auto">
+                        {page === "home" && <Home navigate={navigate} />}
+                        {page === "explore" && <Explore navigate={navigate} userContext={userContext} />}
+                        {page === "active" && <Active activeOrders={activeOrders} archiveOrder={archiveOrder} />}
+                        {page === "history" && <History historyOrders={historyOrders} />}
+                        {page === "profile" && <Profile userContext={userContext} setUserContext={setUserContext} />}
+
+                        {page === "product" && <ProductDetails product={selectedProduct} navigate={navigate} addToCart={addToCart} />}
+                        {page === "cart" && <Cart cartItems={cartItems} checkout={checkoutCart} navigate={navigate} />}
+                    </main>
+
+                    {isMainTab && <BottomNav setPage={navigate} current={page} />}
+                </div>
+            );
+        }
+
+        // =====================================================================
+        // 6. APPLICATION ENTRY POINT
+        // =====================================================================
+
+        function App() {
+            // Global Role State explicitly requested by TC01
+            const [role, setRole] = useLocalStorage("plan_auth_role", null);
+
+            if (!role) return <Login setRole={setRole} />;
+            if (role === 'VENDOR') return <VendorDashboard setRole={setRole} />;
+            return <UserDashboard setRole={setRole} />;
+        }
+
+        ReactDOM.createRoot(document.getElementById("root")).render(<App />);
     </script>
-  </body>
+</body>
 </html>
